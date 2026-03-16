@@ -1,5 +1,6 @@
 package org.gdiazm.finance.app.finance.category.service;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.gdiazm.finance.app.finance.category.dto.CategoryRequest;
 import org.gdiazm.finance.app.finance.category.dto.CategoryResponse;
@@ -10,6 +11,7 @@ import org.gdiazm.finance.app.finance.category.repository.CategoryRepository;
 import org.gdiazm.finance.app.finance.common.exception.BusinessException;
 import org.gdiazm.finance.app.finance.common.exception.ResourceNotFoundException;
 import org.gdiazm.finance.app.finance.security.SecurityUtils;
+import org.gdiazm.finance.app.finance.transaction.repository.TransactionRepository;
 import org.gdiazm.finance.app.finance.user.entity.User;
 import org.gdiazm.finance.app.finance.user.repository.UserRepository;
 import org.mapstruct.control.MappingControl;
@@ -27,6 +29,8 @@ public class CategoryServiceImpl implements CategoryService {
     private final CategoryRepository categoryRepository;
     private final UserRepository userRepository;
     private final CategoryMapper categoryMapper;
+    private final EntityManager entityManager;
+    private final TransactionRepository transactionRepository;
 
     public static final List<String[]> DEFAULT_CATEGORIES = List.of(
             new String[]{"Food", "#FF6B6B"},
@@ -63,7 +67,9 @@ public class CategoryServiceImpl implements CategoryService {
         Category category = categoryMapper.toEntity(request);
         category.setUser(user);
         category.setIsDefault(false);
-        return categoryMapper.toResponse(categoryRepository.save(category));
+        categoryRepository.saveAndFlush(category);
+        entityManager.refresh(category);
+        return categoryMapper.toResponse(category);
     }
 
     @Override
@@ -82,10 +88,10 @@ public class CategoryServiceImpl implements CategoryService {
             throw new BusinessException("Default category cannot be deleted");
         }
 
-        // TODO: validar que no tenga transacciones cuando se implemente ese módulo
-        // if (transactionRepository.existsByCategoryId(categoryId)) {
-        //     throw new BusinessException("Category has transactions and cannot be deleted");
-        // }
+
+         if (transactionRepository.existsByCategoryId(categoryId)) {
+             throw new BusinessException("Category has transactions and cannot be deleted");
+         }
         category.setIsActive(false);
         categoryRepository.save(category);
     }

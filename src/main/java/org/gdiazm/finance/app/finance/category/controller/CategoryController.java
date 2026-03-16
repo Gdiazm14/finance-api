@@ -1,5 +1,6 @@
 package org.gdiazm.finance.app.finance.category.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.gdiazm.finance.app.finance.category.dto.CategoryRequest;
 import org.gdiazm.finance.app.finance.category.dto.CategoryResponse;
@@ -29,11 +30,11 @@ public class CategoryController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public CategoryResponse createCategory(@RequestBody CategoryRequest categoryRequest) {
+    public CategoryResponse createCategory(@Valid @RequestBody CategoryRequest categoryRequest) {
         return categoryService.createCategory(categoryRequest);
     }
     @PatchMapping("/{id}")
-    public CategoryResponse updateCategory(@PathVariable UUID id, @RequestBody CategoryUpdateRequest request) {
+    public CategoryResponse updateCategory(@PathVariable UUID id, @Valid @RequestBody CategoryUpdateRequest request) {
         return categoryService.updateCategory(id,request);
     }
 

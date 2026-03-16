@@ -1,7 +1,9 @@
 package org.gdiazm.finance.app.finance.transaction.service;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.gdiazm.finance.app.finance.account.entity.Account;
+import org.gdiazm.finance.app.finance.account.entity.AccountType;
 import org.gdiazm.finance.app.finance.account.repository.AccountRepository;
 import org.gdiazm.finance.app.finance.category.entity.Category;
 import org.gdiazm.finance.app.finance.category.repository.CategoryRepository;
@@ -14,64 +16,141 @@ import org.gdiazm.finance.app.finance.transaction.dto.TransactionResponse;
 import org.gdiazm.finance.app.finance.transaction.entity.Transaction;
 import org.gdiazm.finance.app.finance.transaction.mapper.TransactionMapper;
 import org.gdiazm.finance.app.finance.transaction.repository.TransactionRepository;
+import org.gdiazm.finance.app.finance.user.entity.User;
+import org.gdiazm.finance.app.finance.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class TransactionServiceImpl implements TransactionService {
 
-    private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
+    private final AccountRepository accountRepository;
     private final CategoryRepository categoryRepository;
+    private final UserRepository userRepository;
     private final TransactionMapper transactionMapper;
+    private final EntityManager entityManager;
+
 
     @Override
     @Transactional
     public TransactionResponse createTransaction(TransactionRequest request) {
-        Account account = getUserAccount(request.getAccountId());
+        UUID userId = SecurityUtils.getCurrentUserId();
+        User user = userRepository.getReferenceById(userId);
+        Account account = findAccountForUser(request.getAccountId(), userId);
 
-        Category category = getCategory(request.getCategoryId());
+        if(!Boolean.TRUE.equals(account.getIsActive())) {
+            throw new BusinessException("Account is inactive and cannot receive new transactions");
+        }
 
         BigDecimal amount = request.getAmount();
-
-
-        if (request.getType() == TransactionType.EXPENSE) {
-            if (account.getBalance().compareTo(amount) < 0) {
-                throw new BusinessException("Insufficient account balance");
-            }
-            if (category.getBudgetAmount().compareTo(amount) < 0) {
-                throw new BusinessException("Insufficient category balance");
-            }
-        }
-
-        if (request.getType() == TransactionType.EXPENSE) {
-
-            account.setBalance(account.getBalance().subtract(amount));
-            category.setBudgetAmount(category.getBudgetAmount().subtract(amount));
-        } else if (request.getType() == TransactionType.INCOME) {
-            account.setBalance(account.getBalance().add(amount));
-        }
-
-
         Transaction transaction = transactionMapper.toEntity(request);
-
         transaction.setAccount(account);
-        transaction.setCategory(category);
+        transaction.setUser(user);
 
-        Transaction result = transactionRepository.save(transaction);
-        return transactionMapper.toTransactionResponse(result);
+
+        switch (request.getType()) {
+            case EXPENSE -> processExpense(transaction, account, amount, request.getCategoryId(), userId);
+            case INCOME -> processIncome(transaction, account, amount, request.getCategoryId(), userId);
+            case TRANSFER -> processTransfer(transaction, account, amount, request.getDestinationAccountId(), userId);
+        }
+
+        transactionRepository.saveAndFlush(transaction);
+        entityManager.refresh(transaction);
+
+        return transactionMapper.toResponse(transaction);
     }
 
-    private Account getUserAccount(UUID uuid) {
-        return accountRepository.findByIdAndUserId(uuid, SecurityUtils.getCurrentUserId())
+    @Override
+    public List<TransactionResponse> getTransactions() {
+        return transactionRepository.findByUserIdOrderByCreatedAtDesc(SecurityUtils.getCurrentUserId())
+                .stream()
+                .map(transactionMapper::toResponse)
+                .toList();
+    }
+
+    @Override
+    public TransactionResponse getTransactionById(UUID transactionId) {
+        return transactionMapper.toResponse(
+                transactionRepository.findByIdAndUserId(transactionId, SecurityUtils.getCurrentUserId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Transaction with id: " + transactionId + " not found"))
+        );
+    }
+
+
+    //--Handlers por tipo
+
+    private void processExpense(Transaction transaction, Account account,
+                                BigDecimal amount, UUID categoryId, UUID userId) {
+
+        if (categoryId == null) {
+            throw new BusinessException("Category is required for Expense Transaction");
+        }
+        Category category = findCategoryForUser(categoryId, userId);
+
+        //Validar fondos en la cuenta - salvo que permita negativos
+
+        if (!Boolean.TRUE.equals(account.getAllowNegativeBalance())
+                && account.getBalance().compareTo(amount) < 0) {
+            throw new BusinessException("Insufficient account balance");
+        }
+
+        if (category.getBudgetAmount().compareTo(amount) < 0) {
+            throw new BusinessException("Insufficient category amount");
+        }
+        account.setBalance(account.getBalance().subtract(amount));
+        category.setBudgetAmount(category.getBudgetAmount().subtract(amount));
+        transaction.setCategory(category);
+    }
+
+    private void processIncome(Transaction transaction, Account account,
+                               BigDecimal amount, UUID categoryId, UUID userId) {
+
+        account.setBalance(account.getBalance().add(amount));
+        if (categoryId != null) {
+            Category category = findCategoryForUser(categoryId, userId);
+            transaction.setCategory(category);
+        }
+    }
+
+    private void processTransfer(Transaction transaction, Account account, BigDecimal amount,
+                                 UUID destinationAccountId, UUID userId) {
+        if (account.getAccountType() == AccountType.CREDIT_CARD) {
+            throw new BusinessException("Credit Card Transfer not allowed");
+        }
+        if (destinationAccountId == null) {
+            throw new BusinessException("Destination Account is required for Transfer Transaction");
+        }
+        if (destinationAccountId.equals(account.getId())) {
+            throw new BusinessException("Source and Destination accounts must be different for Transfer Transaction");
+        }
+        Account destination = findAccountForUser(destinationAccountId, userId);
+
+        if(Boolean.TRUE.equals(destination.getIsActive())) {
+            throw new BusinessException("Destination Account is inactive and cannot receive new transactions");
+        }
+        if (!Boolean.TRUE.equals(account.getAllowNegativeBalance())
+            &&account.getBalance().compareTo(amount) < 0) {
+            throw new BusinessException("Insufficient account balance for transfer");
+        }
+        account.setBalance(account.getBalance().subtract(amount));
+        destination.setBalance(destination.getBalance().add(amount));
+        transaction.setAccount(destination);
+    }
+
+    //Helpers
+    private Account findAccountForUser(UUID accountId, UUID userId) {
+        return accountRepository.findByIdAndUserId(accountId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account not found"));
     }
 
-    private Category getCategory(UUID uuid) {
-        return categoryRepository.findById(uuid).orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+    private Category findCategoryForUser(UUID categoryId, UUID userId) {
+        return categoryRepository.findByIdAndUserId(categoryId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
     }
 }

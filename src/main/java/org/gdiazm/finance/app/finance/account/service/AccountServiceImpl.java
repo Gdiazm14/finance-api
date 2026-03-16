@@ -1,12 +1,15 @@
 package org.gdiazm.finance.app.finance.account.service;
 
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.gdiazm.finance.app.finance.account.dto.AccountRequest;
 import org.gdiazm.finance.app.finance.account.dto.AccountResponse;
 import org.gdiazm.finance.app.finance.account.dto.AccountUpdateRequest;
 import org.gdiazm.finance.app.finance.account.entity.Account;
+import org.gdiazm.finance.app.finance.account.entity.AccountType;
 import org.gdiazm.finance.app.finance.account.mapper.AccountMapper;
 import org.gdiazm.finance.app.finance.account.repository.AccountRepository;
+import org.gdiazm.finance.app.finance.common.exception.BusinessException;
 import org.gdiazm.finance.app.finance.common.exception.ResourceNotFoundException;
 import org.gdiazm.finance.app.finance.security.SecurityUtils;
 import org.gdiazm.finance.app.finance.user.entity.User;
@@ -25,6 +28,7 @@ public class AccountServiceImpl implements AccountService {
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
     private final AccountMapper accountMapper;
+    private final EntityManager entityManager;
 
     @Override
     @Transactional
@@ -33,6 +37,13 @@ public class AccountServiceImpl implements AccountService {
 
         Account account = accountMapper.toEntity(request);
         account.setUser(user);
+
+        if(Boolean.TRUE.equals(account.getAllowNegativeBalance())
+                && request.getAccountType() != AccountType.CREDIT_CARD) {
+            throw new BusinessException("Only credit card accounts allow negative balance");
+        }
+        accountRepository.saveAndFlush(account);
+        entityManager.refresh(account);
          return accountMapper.toResponse(accountRepository.save(account));
     }
 

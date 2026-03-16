@@ -8,9 +8,20 @@ import org.mapstruct.Mapping;
 
 @Mapper(componentModel = "spring")
 public interface TransactionMapper {
-    @Mapping(source = "account.name", target = "accountName")
-    @Mapping(source = "category.name", target = "categoryName")
-    TransactionResponse toTransactionResponse(Transaction transaction);
 
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "account", ignore = true)
+    @Mapping(target = "destinationAccount", ignore = true)
+    @Mapping(target = "category", ignore = true)
+    @Mapping(target = "user", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
     Transaction toEntity(TransactionRequest request);
+
+    @Mapping(target = "accountName", source = "account.name")
+    @Mapping(target = "destinationAccountName", source = "destinationAccount.name")
+    @Mapping(target = "categoryName", source = "category.name")
+    TransactionResponse toResponse(Transaction transaction);
+
+
 }
