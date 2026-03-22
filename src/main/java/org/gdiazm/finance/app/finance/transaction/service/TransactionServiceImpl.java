@@ -7,6 +7,7 @@ import org.gdiazm.finance.app.finance.account.entity.AccountType;
 import org.gdiazm.finance.app.finance.account.repository.AccountRepository;
 import org.gdiazm.finance.app.finance.category.entity.Category;
 import org.gdiazm.finance.app.finance.category.repository.CategoryRepository;
+import org.gdiazm.finance.app.finance.common.dto.PageResponse;
 import org.gdiazm.finance.app.finance.common.entity.TransactionType;
 import org.gdiazm.finance.app.finance.common.exception.BusinessException;
 import org.gdiazm.finance.app.finance.common.exception.ResourceNotFoundException;
@@ -18,11 +19,14 @@ import org.gdiazm.finance.app.finance.transaction.mapper.TransactionMapper;
 import org.gdiazm.finance.app.finance.transaction.repository.TransactionRepository;
 import org.gdiazm.finance.app.finance.user.entity.User;
 import org.gdiazm.finance.app.finance.user.repository.UserRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.List;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Service
@@ -67,12 +71,33 @@ public class TransactionServiceImpl implements TransactionService {
     }
 
     @Override
-    public List<TransactionResponse> getTransactions() {
-        return transactionRepository.findByUserIdOrderByCreatedAtDesc(SecurityUtils.getCurrentUserId())
-                .stream()
-                .map(transactionMapper::toResponse)
-                .toList();
+    @Transactional(readOnly = true)
+    public PageResponse<TransactionResponse> getTransactions(
+            TransactionType type,
+            UUID accountId,
+            OffsetDateTime startDate,
+            OffsetDateTime endDate,
+            int page, int size) {
+
+        Pageable pageable = PageRequest.of(page, size);
+        Page<TransactionResponse> result = transactionRepository.findByFilters(
+                SecurityUtils.getCurrentUserId(),
+                type,
+                accountId,
+                startDate,
+                endDate,
+                pageable
+        ).map(transactionMapper::toResponse);
+        return PageResponse.of(result);
     }
+
+//    @Override
+//    public List<TransactionResponse> getTransactions() {
+//        return transactionRepository.findByUserIdOrderByCreatedAtDesc(SecurityUtils.getCurrentUserId())
+//                .stream()
+//                .map(transactionMapper::toResponse)
+//                .toList();
+//    }
 
     @Override
     public TransactionResponse getTransactionById(UUID transactionId) {
@@ -131,7 +156,7 @@ public class TransactionServiceImpl implements TransactionService {
         }
         Account destination = findAccountForUser(destinationAccountId, userId);
 
-        if(Boolean.TRUE.equals(destination.getIsActive())) {
+        if(!Boolean.TRUE.equals(destination.getIsActive())) {
             throw new BusinessException("Destination Account is inactive and cannot receive new transactions");
         }
         if (!Boolean.TRUE.equals(account.getAllowNegativeBalance())
@@ -140,7 +165,7 @@ public class TransactionServiceImpl implements TransactionService {
         }
         account.setBalance(account.getBalance().subtract(amount));
         destination.setBalance(destination.getBalance().add(amount));
-        transaction.setAccount(destination);
+        transaction.setDestinationAccount(destination);
     }
 
     //Helpers

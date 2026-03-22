@@ -1,5 +1,6 @@
 package org.gdiazm.finance.app.finance.security.jwt;
 
+import io.jsonwebtoken.ExpiredJwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -7,11 +8,10 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.gdiazm.finance.app.finance.security.CustomUserDetails;
 import org.gdiazm.finance.app.finance.security.jwt.service.JwtService;
-import org.gdiazm.finance.app.finance.user.entity.User;
-import org.gdiazm.finance.app.finance.user.repository.UserRepository;
+
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.web.authentication.WebAuthenticationDetails;
+
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -38,8 +38,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
         String token = header.substring(AUTHORIZATION_HEADER_PREFIX.length());
-        UUID userId = jwtService.getUserIdFromToken(token);
+        UUID userId;
         //User user = userRepository.findById(userId).orElse(null);
+
+        try {
+            userId = jwtService.getUserIdFromToken(token);
+        }catch (ExpiredJwtException e){
+        sendUnauthorized(response, "Token has expired");
+        return;
+        }catch (Exception e){
+            sendUnauthorized(response, "Invalid token");
+            return;
+        }
+
 
         if (userId != null && SecurityContextHolder.getContext().getAuthentication() == null) {
            CustomUserDetails userDetails = new CustomUserDetails(userId);
@@ -51,5 +62,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(authToken);
         }
         filterChain.doFilter(request, response);
+    }
+
+
+    private void sendUnauthorized(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setContentType("application/json");
+        response.getWriter().write("""
+                {"status": 401, "error": "Unauthorized", "message": "%s"}
+                """.formatted(message));
     }
 }
