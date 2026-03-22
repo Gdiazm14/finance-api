@@ -11,6 +11,7 @@ import org.gdiazm.finance.app.finance.user.entity.User;
 import org.gdiazm.finance.app.finance.user.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -20,6 +21,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final CategoryService categoryService;
 
+    @Transactional
     public AuthResponse register(RegisterRequest registerRequest) {
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
             throw new BusinessException("Email already exists");
