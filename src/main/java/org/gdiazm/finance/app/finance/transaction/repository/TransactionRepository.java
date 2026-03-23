@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -36,4 +37,20 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             @Param("endDate") OffsetDateTime endDate,
             Pageable pageable
     );
+
+    @Query("""
+        SELECT COALESCE(SUM(t.amount), 0)
+        FROM Transaction t
+        WHERE t.category.id = :categoryId
+        AND t.type = 'EXPENSE'
+        AND t.createdAt >= :start
+        AND t.createdAt < :end
+        """)
+    BigDecimal getSpentByCategoryAndPeriod(
+            @Param("categoryId") UUID categoryId,
+            @Param("start") OffsetDateTime start,
+            @Param("end") OffsetDateTime end
+    );
+
+
 }

@@ -27,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Service
@@ -110,28 +112,62 @@ public class TransactionServiceImpl implements TransactionService {
 
     //--Handlers por tipo
 
+//    private void processExpense(Transaction transaction, Account account,
+//                                BigDecimal amount, UUID categoryId, UUID userId) {
+//
+//        if (categoryId == null) {
+//            throw new BusinessException("Category is required for Expense Transaction");
+//        }
+//        Category category = findCategoryForUser(categoryId, userId);
+//
+//        //Validar fondos en la cuenta - salvo que permita negativos
+//
+//        if (!Boolean.TRUE.equals(account.getAllowNegativeBalance())
+//                && account.getBalance().compareTo(amount) < 0) {
+//            throw new BusinessException("Insufficient account balance");
+//        }
+//
+//        if (category.getBudgetAmount().compareTo(amount) < 0) {
+//            throw new BusinessException("Insufficient category amount");
+//        }
+//        account.setBalance(account.getBalance().subtract(amount));
+//        //category.setBudgetAmount(category.getBudgetAmount().subtract(amount));
+//        transaction.setCategory(category);
+//    }
+
     private void processExpense(Transaction transaction, Account account,
                                 BigDecimal amount, UUID categoryId, UUID userId) {
-
         if (categoryId == null) {
-            throw new BusinessException("Category is required for Expense Transaction");
+            throw new BusinessException("Category is required for EXPENSE transactions");
         }
+
         Category category = findCategoryForUser(categoryId, userId);
 
-        //Validar fondos en la cuenta - salvo que permita negativos
-
+        // Validar fondos en cuenta
         if (!Boolean.TRUE.equals(account.getAllowNegativeBalance())
                 && account.getBalance().compareTo(amount) < 0) {
             throw new BusinessException("Insufficient account balance");
         }
 
-        if (category.getBudgetAmount().compareTo(amount) < 0) {
-            throw new BusinessException("Insufficient category amount");
+        // Validar presupuesto mensual de la categoría
+        if (category.getBudgetAmount().compareTo(BigDecimal.ZERO) > 0) {
+            YearMonth now = YearMonth.now();
+            OffsetDateTime start = now.atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);
+            OffsetDateTime end = now.atEndOfMonth().atTime(23, 59, 59).atOffset(ZoneOffset.UTC);
+
+            BigDecimal spentThisMonth = transactionRepository
+                    .getSpentByCategoryAndPeriod(categoryId, start, end);
+
+            if (spentThisMonth.add(amount).compareTo(category.getBudgetAmount()) > 0) {
+                throw new BusinessException("Insufficient category budget for this month");
+            }
         }
+
         account.setBalance(account.getBalance().subtract(amount));
-        category.setBudgetAmount(category.getBudgetAmount().subtract(amount));
         transaction.setCategory(category);
     }
+
+
 
     private void processIncome(Transaction transaction, Account account,
                                BigDecimal amount, UUID categoryId, UUID userId) {
