@@ -1,6 +1,6 @@
 # Finance API
 
-A RESTful API for personal budget management using the envelope budgeting method. Built with Spring Boot 3 and Java 17, following hexagonal architecture principles.
+A RESTful API for personal budget management using the envelope budgeting method. Built with Spring Boot 3.5.0 and Java 17, following hexagonal architecture principles.
 
 ## Features
 
